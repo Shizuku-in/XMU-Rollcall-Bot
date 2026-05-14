@@ -94,10 +94,7 @@ def send_code(in_session, rollcall_id):
 def send_radar(in_session, rollcall_id):
     url = f"{base_url}/api/rollcall/{rollcall_id}/answer"
 
-    lat_1, lat_2 = 24.3, 24.6
-    lon_1, lon_2 = 118.0, 118.2
-
-    def payload(lat, lon):
+    def make_payload(lat, lon):
         return {
             "accuracy": 35,
             "altitude": 0,
@@ -109,13 +106,16 @@ def send_radar(in_session, rollcall_id):
             "speed": None
         }
 
-    res_1 = in_session.put(url, json=payload(lat_1, lon_1), headers=headers)
+    lat_1, lat_2 = 24.3, 24.6
+    lon_1, lon_2 = 118.0, 118.2
+
+    res_1 = in_session.put(url, json=make_payload(lat_1, lon_1), headers=headers)
     data_1 = res_1.json()
 
     if res_1.status_code == 200:
         return True
 
-    res_2 = in_session.put(url, json=payload(lat_2, lon_2), headers=headers)
+    res_2 = in_session.put(url, json=make_payload(lat_2, lon_2), headers=headers)
     data_2 = res_2.json()
 
     if res_2.status_code == 200:
@@ -175,8 +175,8 @@ def send_radar(in_session, rollcall_id):
     else:
         return False
 
-    payload_1 = payload(sol_x_1, sol_y_1)
-    payload_2 = payload(sol_x_2, sol_y_2)
+    payload_1 = make_payload(sol_x_1, sol_y_1)
+    payload_2 = make_payload(sol_x_2, sol_y_2)
 
     res_3 = in_session.put(url, json=payload_1, headers=headers)
     if res_3.status_code == 200:

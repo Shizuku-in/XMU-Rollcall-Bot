@@ -7,12 +7,11 @@ import re
 from xmulogin import xmulogin
 from utils import clear_screen, save_session, load_session, verify_session
 from rollcall_handler import process_rollcalls
-from config import get_cookies_path
+from config import get_cookies_path, get_strategy
 
 __version__ = "3.4.1"
 
 base_url = "https://lnt.xmu.edu.cn"
-interval = 1
 headers = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -71,7 +70,7 @@ def center_text(text, width=None):
     left_padding = (width - text_len) // 2
     return ' ' * left_padding + text
 
-def print_banner():
+def print_banner(strategy=None):
     """打印美化的横幅"""
     width = get_terminal_width()
     line = '=' * width
@@ -82,6 +81,12 @@ def print_banner():
     print(f"{Colors.OKCYAN}{line}{Colors.ENDC}")
     print(center_text(f"{Colors.BOLD}{title1}{Colors.ENDC}"))
     print(center_text(f"{Colors.GRAY}{title2}{Colors.ENDC}"))
+    if strategy:
+        interval = strategy.get('interval', 3)
+        min_s = strategy.get('min_students', 0)
+        delay = strategy.get('random_delay_max', 0)
+        info = f"Interval: {interval}s | Min Students: {min_s} | Delay: {delay}s"
+        print(center_text(f"{Colors.GRAY}{info}{Colors.ENDC}"))
     print(f"{Colors.OKCYAN}{line}{Colors.ENDC}")
 
 def print_separator(char="-"):
@@ -124,12 +129,13 @@ def print_footer_text(color_offset=0):
     colored = get_colorful_text(text, color_offset)
     print(center_text(colored))
 
-def print_dashboard(name, start_time, query_count, banner_frame=0, show_banner=True):
+def print_dashboard(name, start_time, query_count, strategy=None, banner_frame=0, show_banner=True):
     """打印主仪表板"""
     clear_screen()
-    print_banner()
+    print_banner(strategy)
 
     local_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    interval = strategy.get('interval', 3) if strategy else 3
 
     if time.localtime().tm_hour < 12 and time.localtime().tm_hour >= 5:
         greeting = "Good morning"
@@ -202,17 +208,17 @@ def update_footer_text():
     sys.stdout.write("\033[?25h")
     sys.stdout.flush()
 
-def start_monitor(account):
+def start_monitor(account, strategy=None):
     """启动监控程序"""
     USERNAME = account['username']
     PASSWORD = account['password']
     ACCOUNT_ID = account.get('id', 1)
     ACCOUNT_NAME = account.get('name', '')
-    # LATITUDE = account.get('latitude', 0)
-    # LONGITUDE = account.get('longitude', 0)
 
-    # 设置全局位置信息
-    # set_location(LATITUDE, LONGITUDE)
+    if strategy is None:
+        strategy = {}
+
+    interval = strategy.get('interval', 3)
 
     cookies_path = get_cookies_path(ACCOUNT_ID)
     rollcalls_url = f"{base_url}/api/radar/rollcalls"
@@ -220,7 +226,7 @@ def start_monitor(account):
 
     # 初始化
     clear_screen()
-    print_banner()
+    print_banner(strategy)
     print(f"\n{Colors.BOLD}Initializing XMU Rollcall Bot...{Colors.ENDC}\n")
     print_separator()
 
@@ -252,8 +258,6 @@ def start_monitor(account):
             sys.exit(1)
 
     print(f"{Colors.OKCYAN}[Step 3/3]{Colors.ENDC} Fetching user profile...")
-    # profile = session.get(f"{base_url}/api/profile", headers=headers).json()
-    # name = profile["name"]
     print_login_status(f"Welcome, {ACCOUNT_NAME}", True)
 
     print(f"\n{Colors.OKGREEN}{Colors.BOLD}Initialization complete{Colors.ENDC}")
@@ -265,10 +269,10 @@ def start_monitor(account):
     query_count = 0
     start_time = time.time()
 
-    print_dashboard(ACCOUNT_NAME, start_time, query_count, 0, show_banner=False)
+    print_dashboard(ACCOUNT_NAME, start_time, query_count, strategy, 0, show_banner=False)
 
     footer_initialized = False
-    _last_query_time = 0
+    _next_query_time = time.time()
 
     try:
         while True:
@@ -284,12 +288,12 @@ def start_monitor(account):
                     footer_initialized = True
                     update_footer_text()
 
-                elapsed = int(current_time - start_time)
-                if elapsed > _last_query_time:
-                    _last_query_time = elapsed
+                if current_time >= _next_query_time:
+                    _next_query_time = current_time + interval
                     data = session.get(rollcalls_url, headers=headers).json()
                     query_count += 1
 
+                    elapsed = int(current_time - start_time)
                     local_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     running_time = format_time(elapsed)
 
@@ -305,14 +309,14 @@ def start_monitor(account):
                             print(f"\n{Colors.WARNING}{Colors.BOLD}{'!' * width}{Colors.ENDC}")
                             print(center_text(f"{Colors.WARNING}{Colors.BOLD}NEW ROLLCALL DETECTED{Colors.ENDC}"))
                             print(f"{Colors.WARNING}{Colors.BOLD}{'!' * width}{Colors.ENDC}\n")
-                            temp_data = process_rollcalls(temp_data, session)
+                            temp_data = process_rollcalls(temp_data, session, strategy)
                             print_separator("=")
                             print(f"\n{center_text(f'{Colors.GRAY}Press Ctrl+C to exit, continuing monitor...{Colors.ENDC}')}\n")
                             try:
                                 time.sleep(3)
                             except KeyboardInterrupt:
                                 raise
-                            print_dashboard(ACCOUNT_NAME, start_time, query_count, 0)
+                            print_dashboard(ACCOUNT_NAME, start_time, query_count, strategy, 0)
             except KeyboardInterrupt:
                 raise
             except Exception as e:

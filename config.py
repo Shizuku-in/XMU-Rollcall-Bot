@@ -38,7 +38,12 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "accounts": [],
-    "current_account_id": None
+    "current_account_id": None,
+    "strategy": {
+        "interval": 3,
+        "min_students": 0,
+        "random_delay_max": 5
+    }
 }
 
 DEFAULT_ACCOUNT = {
@@ -55,6 +60,21 @@ def ensure_config_dir():
     except (OSError, PermissionError) as e:
         raise RuntimeError(f"无法创建配置目录 {CONFIG_DIR}: {e}\n提示：可以设置环境变量 XMU_ROLLCALL_CONFIG_DIR 指定配置目录位置")
 
+def _deep_copy_default():
+    """深拷贝默认配置"""
+    return json.loads(json.dumps(DEFAULT_CONFIG))
+
+def _ensure_strategy(config):
+    """确保配置中包含 strategy 字段，缺失时补全默认值"""
+    default_strategy = DEFAULT_CONFIG["strategy"]
+    if "strategy" not in config:
+        config["strategy"] = default_strategy.copy()
+    else:
+        for key, val in default_strategy.items():
+            if key not in config["strategy"]:
+                config["strategy"][key] = val
+    return config
+
 def load_config():
     """加载配置文件"""
     ensure_config_dir()
@@ -68,21 +88,20 @@ def load_config():
                     old_username = config.get("username", "")
                     old_password = config.get("password", "")
                     if old_username and old_password:
-                        new_config = {
-                            "accounts": [{
-                                "id": 1,
-                                "name": "",
-                                "username": old_username,
-                                "password": old_password
-                            }],
-                            "current_account_id": 1
-                        }
+                        new_config = _deep_copy_default()
+                        new_config["accounts"] = [{
+                            "id": 1,
+                            "name": "",
+                            "username": old_username,
+                            "password": old_password
+                        }]
+                        new_config["current_account_id"] = 1
                         return new_config
-                    return DEFAULT_CONFIG.copy()
-                return config
+                    return _deep_copy_default()
+                return _ensure_strategy(config)
         except Exception:
-            return DEFAULT_CONFIG.copy()
-    return DEFAULT_CONFIG.copy()
+            return _deep_copy_default()
+    return _deep_copy_default()
 
 def save_config(config):
     """保存配置文件"""
@@ -143,6 +162,22 @@ def is_config_complete(config):
         return False
     required_fields = ["username", "password"]
     return all(current_account.get(field) for field in required_fields)
+
+def get_strategy(config):
+    """获取自动化策略配置"""
+    _ensure_strategy(config)
+    return config["strategy"]
+
+def set_strategy(config, interval=None, min_students=None, random_delay_max=None):
+    """设置自动化策略配置"""
+    _ensure_strategy(config)
+    strategy = config["strategy"]
+    if interval is not None:
+        strategy["interval"] = interval
+    if min_students is not None:
+        strategy["min_students"] = min_students
+    if random_delay_max is not None:
+        strategy["random_delay_max"] = random_delay_max
 
 def get_cookies_path(account_id=None):
     """获取cookies文件路径，根据账号ID命名"""

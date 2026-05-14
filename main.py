@@ -3,7 +3,8 @@ from xmulogin import xmulogin
 from config import (
     load_config, save_config, is_config_complete, get_cookies_path,
     add_account, get_all_accounts, get_current_account, set_current_account,
-    get_account_by_id, CONFIG_FILE, delete_account, perform_account_deletion
+    get_account_by_id, CONFIG_FILE, delete_account, perform_account_deletion,
+    get_strategy, set_strategy
 )
 from monitor import start_monitor, base_url, headers
 
@@ -142,6 +143,49 @@ def cmd_config():
         else:
             print(f"{Colors.FAIL}✗ Account not found.{Colors.ENDC}\n")
 
+    def configure_strategy():
+        """配置自动化策略"""
+        print(f"{Colors.BOLD}{Colors.OKCYAN}=== Strategy Settings ==={Colors.ENDC}\n")
+
+        strategy = get_strategy(current_config)
+
+        # 显示当前配置
+        print(f"{Colors.BOLD}Current settings:{Colors.ENDC}")
+        print(f"  Interval:         {Colors.OKCYAN}{strategy.get('interval', 3)}{Colors.ENDC} seconds")
+        print(f"  Min Students:     {Colors.OKCYAN}{strategy.get('min_students', 0)}{Colors.ENDC} (0 = immediate)")
+        print(f"  Random Delay Max: {Colors.OKCYAN}{strategy.get('random_delay_max', 5)}{Colors.ENDC} seconds")
+        print()
+
+        # Interval
+        val = input(f"{Colors.BOLD}Query interval in seconds (current: {strategy.get('interval', 3)}, press Enter to keep): {Colors.ENDC}").strip()
+        if val:
+            try:
+                interval = max(1, int(val))
+                set_strategy(current_config, interval=interval)
+            except ValueError:
+                print(f"{Colors.WARNING}Invalid value, keeping current.{Colors.ENDC}")
+
+        # Min Students
+        val = input(f"{Colors.BOLD}Min students before signing (current: {strategy.get('min_students', 0)}, 0 = immediate, press Enter to keep): {Colors.ENDC}").strip()
+        if val:
+            try:
+                min_s = max(0, int(val))
+                set_strategy(current_config, min_students=min_s)
+            except ValueError:
+                print(f"{Colors.WARNING}Invalid value, keeping current.{Colors.ENDC}")
+
+        # Random Delay Max
+        val = input(f"{Colors.BOLD}Random delay max in seconds (current: {strategy.get('random_delay_max', 5)}, 0 = no delay, press Enter to keep): {Colors.ENDC}").strip()
+        if val:
+            try:
+                delay = max(0, float(val))
+                set_strategy(current_config, random_delay_max=delay)
+            except ValueError:
+                print(f"{Colors.WARNING}Invalid value, keeping current.{Colors.ENDC}")
+
+        save_config(current_config)
+        print(f"\n{Colors.OKGREEN}✓ Strategy settings saved!{Colors.ENDC}\n")
+
     # 主循环
     while True:
         show_accounts()
@@ -149,9 +193,10 @@ def cmd_config():
         print(f"{Colors.BOLD}Choose an action:{Colors.ENDC}")
         print(f"  {Colors.OKCYAN}n{Colors.ENDC} - Add new account")
         print(f"  {Colors.OKCYAN}d{Colors.ENDC} - Delete account")
+        print(f"  {Colors.OKCYAN}s{Colors.ENDC} - Strategy settings (interval, delay...)")
         print(f"  {Colors.OKCYAN}q{Colors.ENDC} - Quit")
 
-        action = input(f"\n{Colors.BOLD}Action (n/d/q, default: q): {Colors.ENDC}").strip().lower()
+        action = input(f"\n{Colors.BOLD}Action (n/d/s/q, default: q): {Colors.ENDC}").strip().lower()
 
         if not action:
             action = 'q'
@@ -162,6 +207,8 @@ def cmd_config():
             add_new_account()
         elif action == 'd':
             delete_existing_account()
+        elif action == 's':
+            configure_strategy()
         elif action == 'q':
             # 退出前显示最终账号列表
             accounts = get_all_accounts(current_config)
@@ -175,7 +222,7 @@ def cmd_config():
                 print(f"{Colors.GRAY}You can run: {Colors.BOLD}python main.py start{Colors.ENDC}{Colors.GRAY} to start monitoring{Colors.ENDC}")
             break
         else:
-            print(f"{Colors.WARNING}Invalid action. Please choose n, d, or q.{Colors.ENDC}\n")
+            print(f"{Colors.WARNING}Invalid action. Please choose n, d, s, or q.{Colors.ENDC}\n")
 
 
 def cmd_start():
@@ -193,9 +240,13 @@ def cmd_start():
     current_account = get_current_account(config_data)
     print(f"{Colors.OKCYAN}Using account: {current_account.get('name') or current_account.get('username')} (ID: {current_account.get('id')}){Colors.ENDC}")
 
+    # 获取策略配置
+    strategy = get_strategy(config_data)
+    print(f"{Colors.GRAY}Strategy: interval={strategy.get('interval')}s, min_students={strategy.get('min_students')}, delay_max={strategy.get('random_delay_max')}s{Colors.ENDC}")
+
     # 启动监控
     try:
-        start_monitor(current_account)
+        start_monitor(current_account, strategy)
     except KeyboardInterrupt:
         print(f"\n{Colors.WARNING}Shutting down...{Colors.ENDC}")
         sys.exit(0)

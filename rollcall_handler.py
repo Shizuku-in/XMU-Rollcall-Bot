@@ -1,12 +1,26 @@
 import time
+import random
 from verify import send_code, send_radar
 
-def process_rollcalls(data, session):
-    """处理签到数据"""
-    data_empty = {'rollcalls': []}
-    result = handle_rollcalls(data, session)
+def process_rollcalls(data, session, strategy=None):
+    """处理签到数据
+    
+    Args:
+        data: 签到数据
+        session: 登录会话
+        strategy: 自动化策略配置 dict，包含 min_students, random_delay_max
+    """
+    if strategy is None:
+        strategy = {}
+
+    min_students = strategy.get("min_students", 0)
+    random_delay_max = strategy.get("random_delay_max", 0)
+
+    result = handle_rollcalls(data, session, min_students, random_delay_max)
+
+    # 如果有任何签到未完成（False），返回空数据以便下次循环继续尝试
     if False in result:
-        return data_empty
+        return {'rollcalls': []}
     else:
         return data
 
@@ -27,14 +41,22 @@ def extract_rollcalls(data):
                 'rollcall_id': rollcall['rollcall_id'],
                 'rollcall_status': rollcall['rollcall_status'],
                 'scored': rollcall['scored'],
-                'status': rollcall['status']
+                'status': rollcall['status'],
+                'present_count': rollcall.get('present_count', 0),
             })
     else:
         rollcall_count = 0
     return rollcall_count, result
 
-def handle_rollcalls(data, session):
-    """处理签到流程"""
+def handle_rollcalls(data, session, min_students=0, random_delay_max=0):
+    """处理签到流程
+    
+    Args:
+        data: 签到数据
+        session: 登录会话
+        min_students: 最少等待多少人签完后再签，0 = 立即签
+        random_delay_max: 满足人数条件后的随机延迟上限（秒）
+    """
     count, rollcalls = extract_rollcalls(data)
     answer_status = [False for _ in range(count)]
 
@@ -50,16 +72,33 @@ def handle_rollcalls(data, session):
                 temp_str = "Number rollcall"
             else:
                 temp_str = "QRcode rollcall"
-            print(f"Rollcall type: {temp_str}\n")
+            print(f"Rollcall type: {temp_str}")
 
-            if (rollcalls[i]['status'] == 'absent') & (rollcalls[i]['is_number']) & (not rollcalls[i]['is_radar']):
+            present_count = rollcalls[i].get('present_count', 0)
+            print(f"Present count: {present_count} student(s) signed")
+
+            # --- 等待人数判断 ---
+            if min_students > 0 and present_count < min_students:
+                print(f"⏳ Waiting for more students (need {min_students}, currently {present_count}). Skipping for now...")
+                answer_status[i] = False
+                continue
+
+            # --- 随机延迟 ---
+            if random_delay_max > 0:
+                wait_time = random.uniform(0.5, random_delay_max)
+                print(f"⏱ Random delay: {wait_time:.1f}s ...")
+                time.sleep(wait_time)
+
+            print()
+
+            if rollcalls[i]['status'] == 'on_call_fine':
+                print("Already answered.")
+                answer_status[i] = True
+            elif (rollcalls[i]['status'] == 'absent') & (rollcalls[i]['is_number']) & (not rollcalls[i]['is_radar']):
                 if send_code(session, rollcalls[i]['rollcall_id']):
                     answer_status[i] = True
                 else:
                     print("Answering failed.")
-            elif rollcalls[i]['status'] == 'on_call_fine':
-                print("Already answered.")
-                answer_status[i] = True
             elif rollcalls[i]['is_radar']:
                 if send_radar(session, rollcalls[i]['rollcall_id']):
                     answer_status[i] = True
