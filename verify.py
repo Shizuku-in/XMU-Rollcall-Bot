@@ -1,7 +1,10 @@
 import uuid
 import time
 import math
+import asyncio
 import requests
+import aiohttp
+from aiohttp import CookieJar
 
 base_url = "https://lnt.xmu.edu.cn"
 headers = {
@@ -90,6 +93,53 @@ def send_code(in_session, rollcall_id):
         t01 = time.time()
         print(f"Failed to submit number code: {e}\nTime: {t01 - t00:.2f} s.")
         return False
+
+def send_code_bruteforce(in_session, rollcall_id):
+    """暴力破解数字签到码（0000-9999 并发尝试）"""
+    url = f"{base_url}/api/rollcall/{rollcall_id}/answer_number_rollcall"
+    print("Brute-forcing number code (0000-9999)...")
+    t00 = time.time()
+
+    async def put_request(i, aio_session, stop_flag, answer_url, sem):
+        if stop_flag.is_set():
+            return None
+        async with sem:
+            if stop_flag.is_set():
+                return None
+            payload = {"deviceId": str(uuid.uuid4()), "numberCode": str(i).zfill(4)}
+            try:
+                async with aio_session.put(answer_url, json=payload) as r:
+                    if r.status == 200:
+                        stop_flag.set()
+                        return str(i).zfill(4)
+            except:
+                pass
+            return None
+
+    async def main():
+        stop_flag = asyncio.Event()
+        sem = asyncio.Semaphore(200)
+        cookie_jar = CookieJar()
+        for c in in_session.cookies:
+            cookie_jar.update_cookies({c.name: c.value})
+        async with aiohttp.ClientSession(headers=dict(in_session.headers), cookie_jar=cookie_jar) as aio_session:
+            tasks = [asyncio.create_task(put_request(i, aio_session, stop_flag, url, sem)) for i in range(10000)]
+            try:
+                for coro in asyncio.as_completed(tasks):
+                    res = await coro
+                    if res:
+                        t01 = time.time()
+                        print(f"Number code cracked! Code: {res}, Time: {t01 - t00:.2f}s")
+                        return True
+            finally:
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+        t01 = time.time()
+        print(f"Brute force failed. Time: {t01 - t00:.2f}s")
+        return False
+
+    return asyncio.run(main())
 
 def send_radar(in_session, rollcall_id):
     url = f"{base_url}/api/rollcall/{rollcall_id}/answer"

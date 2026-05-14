@@ -168,7 +168,7 @@ def get_strategy(config):
     _ensure_strategy(config)
     return config["strategy"]
 
-def set_strategy(config, interval=None, min_students=None, random_delay_max=None):
+def set_strategy(config, interval=None, min_students=None, random_delay_max=None, number_code_method=None):
     """设置自动化策略配置"""
     _ensure_strategy(config)
     strategy = config["strategy"]
@@ -178,6 +178,8 @@ def set_strategy(config, interval=None, min_students=None, random_delay_max=None
         strategy["min_students"] = min_students
     if random_delay_max is not None:
         strategy["random_delay_max"] = random_delay_max
+    if number_code_method is not None:
+        strategy["number_code_method"] = number_code_method
 
 def get_cookies_path(account_id=None):
     """获取cookies文件路径，根据账号ID命名"""
