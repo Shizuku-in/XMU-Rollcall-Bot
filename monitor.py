@@ -5,10 +5,11 @@ import requests
 import shutil
 import re
 from xmulogin import xmulogin
-from . import __version__
-from .utils import clear_screen, save_session, load_session, verify_session
-from .rollcall_handler import process_rollcalls
-from .config import get_cookies_path
+from utils import clear_screen, save_session, load_session, verify_session
+from rollcall_handler import process_rollcalls
+from config import get_cookies_path
+
+__version__ = "3.4.1"
 
 base_url = "https://lnt.xmu.edu.cn"
 interval = 1

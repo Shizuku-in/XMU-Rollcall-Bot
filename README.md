@@ -15,21 +15,19 @@
 
 [简体中文](README_CN.md)
 
-> [!WARNING]
-> 2026-05-12 Previous login method has been deprecated. Update with `pip install -U xmulogin` to get the latest version.
-
 ## Install
 
 ```bash
-pip install xmu-rollcall-cli
+pip install -r requirements.txt
 ```
 
 ## Usage
 
 ```bash
-xmu config  # configure your account. support multiple accounts.
-xmu switch  # switch between accounts.
-xmu start   # start the monitor.
+python main.py config   # configure your account. support multiple accounts.
+python main.py switch   # switch between accounts.
+python main.py start    # start the monitor.
+python main.py refresh  # refresh the login status.
 ```
 
 ## Other

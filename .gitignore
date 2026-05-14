@@ -1,4 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
 /venv/
 /.venv/
-/.idea/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config files (should not be committed)
+cookies.json
+config.json
+info.txt
+
+# Legacy
 legacy/v3.0.1/info.txt

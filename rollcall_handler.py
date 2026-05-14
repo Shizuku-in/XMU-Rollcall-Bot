@@ -1,5 +1,5 @@
 import time
-from .verify import send_code, send_radar
+from verify import send_code, send_radar
 
 def process_rollcalls(data, session):
     """处理签到数据"""
@@ -70,4 +70,3 @@ def handle_rollcalls(data, session):
                 print("Answering failed. QRcode rollcall not supported yet.")
 
     return answer_status
-

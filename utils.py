@@ -48,4 +48,3 @@ def verify_session(sess: requests.Session) -> dict:
     except Exception:
         pass
     return {}
-
