@@ -180,46 +180,23 @@ def _login_tronclass(username: str, password: str) -> Optional[requests.Session]
     Returns:
         成功返回已登录的Session对象，失败返回None
     """
-    url = "https://c-identity.xmu.edu.cn/auth/realms/xmu/protocol/openid-connect/auth"
-    url_2 = "https://c-identity.xmu.edu.cn/auth/realms/xmu/protocol/openid-connect/token"
-    url_3 = "https://lnt.xmu.edu.cn/api/login?login=access_token"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36"
-    }
-
-    params = {
-        "scope": "openid",
-        "response_type": "code",
-        "client_id": "TronClassH5",
-        "redirect_uri": "https://c-mobile.xmu.edu.cn/identity-web-login-callback?_h5=true"
-    }
-
     try:
         s = requests.Session()
+        s.headers.update(HEADERS)
+        s.cookies.update(COOKIES)
 
-        url1 = 'https://lnt.xmu.edu.cn/login'
-        res1 = s.get(url1, headers=HEADERS, allow_redirects=False)
-        location1 = res1.headers.get('Location')
-        print(res1.status_code, location1)
+        login_page = s.get('https://lnt.xmu.edu.cn/login', allow_redirects=True, timeout=20)
+        if login_page.status_code != 200:
+            raise RuntimeError(f"无法打开统一身份认证页面，HTTP {login_page.status_code}")
 
-        res2 = s.get(location1, allow_redirects=False)
-        location2 = res2.headers.get('Location')
-        print(res2.status_code, location2)
+        html = login_page.text
+        salt_match = re.search(r'id="pwdEncryptSalt"\s+value="([^"]+)"', html)
+        execution_match = re.search(r'name="execution"\s+value="([^"]+)"', html)
+        if not salt_match or not execution_match:
+            raise RuntimeError("无法从统一身份认证页面提取登录参数")
 
-        res3 = s.get(location2, allow_redirects=False)
-        location3 = res3.headers.get('Location')
-        print(res3.status_code, location3)
-
-        res4 = s.get(location3, allow_redirects=False)
-        location4 = res4.headers.get('Location')
-        print(res4.status_code, location4)
-
-        res5 = s.get(location4, cookies=COOKIES, headers=HEADERS)
-        html = res5.text
-
-        salt = re.search(r'id="pwdEncryptSalt"\s+value="([^"]+)"', html).group(1)
-        execution = re.search(r'name="execution"\s+value="([^"]+)"', html).group(1)
+        salt = salt_match.group(1)
+        execution = execution_match.group(1)
         enc = _encrypt_password(password, salt)
         # 提交登录表单
         data = {
@@ -233,24 +210,28 @@ def _login_tronclass(username: str, password: str) -> Optional[requests.Session]
             "execution": execution
         }
 
-        res5 = s.post(location4, data=data, cookies=COOKIES, headers=HEADERS, allow_redirects=False)
-        location5 = res5.headers.get('Location')
-        print(res5.status_code, location5)
+        post_headers = HEADERS.copy()
+        post_headers["Referer"] = login_page.url
+        login_result = s.post(
+            login_page.url,
+            data=data,
+            headers=post_headers,
+            allow_redirects=True,
+            timeout=20
+        )
+        if login_result.status_code >= 400:
+            raise RuntimeError(f"登录跳转失败，HTTP {login_result.status_code}")
 
-        res6 = s.get(location5, cookies=COOKIES, headers=HEADERS, allow_redirects=False)
-        location6 = res6.headers.get('Location')
-        print(res6.status_code, location6)
+        profile = s.get("https://lnt.xmu.edu.cn/api/profile", headers=HEADERS, timeout=20)
+        if profile.status_code == 200:
+            try:
+                profile_data = profile.json()
+            except ValueError:
+                profile_data = {}
+            if isinstance(profile_data, dict) and "name" in profile_data:
+                return s
 
-        res7 = s.get(location6, allow_redirects=False)
-        location7 = res7.headers.get('Location')
-        print(res7.status_code, location7)
-
-        res8 = s.get(location7)
-
-        if res8.status_code == 200:
-            return s
-        else:
-            return None
+        raise RuntimeError("登录未通过，账号密码可能错误，或统一身份认证需要验证码/二次验证")
 
     except Exception as e:
         print(f"数字化教学平台登录失败: {e}")
