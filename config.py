@@ -41,7 +41,6 @@ DEFAULT_CONFIG = {
     "current_account_id": None,
     "strategy": {
         "interval": 3,
-        "min_students": 0,
         "random_delay_max": 5
     }
 }
@@ -168,14 +167,12 @@ def get_strategy(config):
     _ensure_strategy(config)
     return config["strategy"]
 
-def set_strategy(config, interval=None, min_students=None, random_delay_max=None, number_code_method=None):
+def set_strategy(config, interval=None, random_delay_max=None, number_code_method=None):
     """设置自动化策略配置"""
     _ensure_strategy(config)
     strategy = config["strategy"]
     if interval is not None:
         strategy["interval"] = interval
-    if min_students is not None:
-        strategy["min_students"] = min_students
     if random_delay_max is not None:
         strategy["random_delay_max"] = random_delay_max
     if number_code_method is not None:

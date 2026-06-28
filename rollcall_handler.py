@@ -8,16 +8,15 @@ def process_rollcalls(data, session, strategy=None):
     Args:
         data: 签到数据
         session: 登录会话
-        strategy: 自动化策略配置 dict，包含 min_students, random_delay_max, number_code_method
+        strategy: 自动化策略配置 dict，包含 random_delay_max, number_code_method
     """
     if strategy is None:
         strategy = {}
 
-    min_students = strategy.get("min_students", 0)
     random_delay_max = strategy.get("random_delay_max", 0)
     number_code_method = strategy.get("number_code_method", 1)
 
-    result = handle_rollcalls(data, session, min_students, random_delay_max, number_code_method)
+    result = handle_rollcalls(data, session, random_delay_max, number_code_method)
 
     # 如果有任何签到未完成（False），返回空数据以便下次循环继续尝试
     if False in result:
@@ -49,14 +48,13 @@ def extract_rollcalls(data):
         rollcall_count = 0
     return rollcall_count, result
 
-def handle_rollcalls(data, session, min_students=0, random_delay_max=0, number_code_method=1):
+def handle_rollcalls(data, session, random_delay_max=0, number_code_method=1):
     """处理签到流程
-    
+
     Args:
         data: 签到数据
         session: 登录会话
-        min_students: 最少等待多少人签完后再签，0 = 立即签
-        random_delay_max: 满足人数条件后的随机延迟上限（秒）
+        random_delay_max: 随机延迟上限（秒）
         number_code_method: 数字签到方式，1=API，2=暴力破解
     """
     count, rollcalls = extract_rollcalls(data)
@@ -78,12 +76,6 @@ def handle_rollcalls(data, session, min_students=0, random_delay_max=0, number_c
 
             present_count = rollcalls[i].get('present_count', 0)
             print(f"Present count: {present_count} student(s) signed")
-
-            # --- 等待人数判断 ---
-            if min_students > 0 and present_count < min_students:
-                print(f"⏳ Waiting for more students (need {min_students}, currently {present_count}). Skipping for now...")
-                answer_status[i] = False
-                continue
 
             # --- 随机延迟 ---
             if random_delay_max > 0:

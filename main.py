@@ -155,7 +155,6 @@ def cmd_config():
         # 显示当前配置
         print(f"{Colors.BOLD}Current settings:{Colors.ENDC}")
         print(f"  Interval:         {Colors.OKCYAN}{strategy.get('interval', 3)}{Colors.ENDC} seconds")
-        print(f"  Min Students:     {Colors.OKCYAN}{strategy.get('min_students', 0)}{Colors.ENDC} (0 = immediate)")
         print(f"  Random Delay Max: {Colors.OKCYAN}{strategy.get('random_delay_max', 5)}{Colors.ENDC} seconds")
         print(f"  Num Code Method:  {Colors.OKCYAN}{strategy.get('number_code_method', 1)}{Colors.ENDC} (1=API, 2=BruteForce)")
         print()
@@ -166,15 +165,6 @@ def cmd_config():
             try:
                 interval = max(1, int(val))
                 set_strategy(current_config, interval=interval)
-            except ValueError:
-                print(f"{Colors.WARNING}Invalid value, keeping current.{Colors.ENDC}")
-
-        # Min Students
-        val = input(f"{Colors.BOLD}Min students before signing (current: {strategy.get('min_students', 0)}, 0 = immediate, press Enter to keep): {Colors.ENDC}").strip()
-        if val:
-            try:
-                min_s = max(0, int(val))
-                set_strategy(current_config, min_students=min_s)
             except ValueError:
                 print(f"{Colors.WARNING}Invalid value, keeping current.{Colors.ENDC}")
 
@@ -258,7 +248,7 @@ def cmd_start():
 
     # 获取策略配置
     strategy = get_strategy(config_data)
-    print(f"{Colors.GRAY}Strategy: interval={strategy.get('interval')}s, min_students={strategy.get('min_students')}, delay_max={strategy.get('random_delay_max')}s, num_code_method={strategy.get('number_code_method', 1)}{Colors.ENDC}")
+    print(f"{Colors.GRAY}Strategy: interval={strategy.get('interval')}s, delay_max={strategy.get('random_delay_max')}s, num_code_method={strategy.get('number_code_method', 1)}{Colors.ENDC}")
 
     # 启动监控
     try:

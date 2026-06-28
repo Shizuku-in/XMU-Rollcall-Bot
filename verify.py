@@ -160,19 +160,28 @@ def send_radar(in_session, rollcall_id):
     lon_1, lon_2 = 118.0, 118.2
 
     res_1 = in_session.put(url, json=make_payload(lat_1, lon_1), headers=headers)
-    data_1 = res_1.json()
-
     if res_1.status_code == 200:
         return True
 
     res_2 = in_session.put(url, json=make_payload(lat_2, lon_2), headers=headers)
-    data_2 = res_2.json()
-
     if res_2.status_code == 200:
         return True
 
-    distance_1 = data_1.get("distance")
-    distance_2 = data_2.get("distance")
+    def get_distance_from_res(res):
+        try:
+            data = res.json()
+            if isinstance(data, dict):
+                return data.get("distance")
+        except ValueError:
+            pass
+        return None
+
+    distance_1 = get_distance_from_res(res_1)
+    distance_2 = get_distance_from_res(res_2)
+    
+    if distance_1 is None or distance_2 is None:
+        print("Failed to get valid distance from API responses.")
+        return False
 
     def latlon_to_xy(lat, lon, lat0, lon0):
         R = 6371000
@@ -232,7 +241,11 @@ def send_radar(in_session, rollcall_id):
     if res_3.status_code == 200:
         return True
     else:
-        print(res_3.json())
+        try:
+            print(res_3.json())
+        except ValueError:
+            print(f"Failed to parse response: {res_3.text}")
+            
         res_4 = in_session.put(url, json=payload_2, headers=headers)
         if res_4.status_code == 200:
             return True

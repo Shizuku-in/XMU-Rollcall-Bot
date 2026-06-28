@@ -83,10 +83,9 @@ def print_banner(strategy=None):
     print(center_text(f"{Colors.GRAY}{title2}{Colors.ENDC}"))
     if strategy:
         interval = strategy.get('interval', 3)
-        min_s = strategy.get('min_students', 0)
         delay = strategy.get('random_delay_max', 0)
         method = strategy.get('number_code_method', 1)
-        info = f"Interval: {interval}s | Min Students: {min_s} | Delay: {delay}s | Num Method: {method}"
+        info = f"Interval: {interval}s | Delay: {delay}s | Num Method: {method}"
         print(center_text(f"{Colors.GRAY}{info}{Colors.ENDC}"))
     print(f"{Colors.OKCYAN}{line}{Colors.ENDC}")
 
