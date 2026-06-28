@@ -173,10 +173,10 @@ def print_login_status(message, is_success=True):
     else:
         print(f"{Colors.FAIL}[FAILED]{Colors.ENDC} {message}")
 
-TIME_LINE = 10
-RUNTIME_LINE = 11
-QUERY_LINE = 12
-FOOTER_LINE = 20
+TIME_LINE = 11
+RUNTIME_LINE = 12
+QUERY_LINE = 13
+FOOTER_LINE = 22
 
 def update_status_line(line_num, label, value, color):
     """更新指定行的状态信息，不清屏"""
@@ -273,6 +273,10 @@ def start_monitor(account, strategy=None):
 
     footer_initialized = False
     _next_query_time = time.time()
+    
+    import concurrent.futures
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    current_future = None
 
     try:
         while True:
@@ -288,20 +292,37 @@ def start_monitor(account, strategy=None):
                     footer_initialized = True
                     update_footer_text()
 
-                if current_time >= _next_query_time:
+                elapsed = int(current_time - start_time)
+                local_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                running_time = format_time(elapsed)
+
+                update_status_line(TIME_LINE, "Current Time:", local_time, Colors.OKCYAN)
+                update_status_line(RUNTIME_LINE, "Running Time:", running_time, Colors.OKGREEN)
+
+                if current_time >= _next_query_time and current_future is None:
                     _next_query_time = current_time + interval
-                    data = session.get(rollcalls_url, headers=headers).json()
-                    query_count += 1
+                    current_future = executor.submit(session.get, rollcalls_url, headers=headers, timeout=10)
+                    
+                if current_future and current_future.done():
+                    data_success = False
+                    error_msg = None
+                    try:
+                        res = current_future.result()
+                        data = res.json()
+                        data_success = True
+                        query_count += 1
+                    except Exception as e:
+                        error_msg = type(e).__name__
+                        
+                    current_future = None
 
-                    elapsed = int(current_time - start_time)
-                    local_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                    running_time = format_time(elapsed)
+                    query_display = str(query_count)
+                    if error_msg:
+                        query_display += f"    {Colors.FAIL}[Network Error: {error_msg}]{Colors.ENDC}"
+                    
+                    update_status_line(QUERY_LINE, "Query Count: ", query_display, Colors.WARNING)
 
-                    update_status_line(TIME_LINE, "Current Time:", local_time, Colors.OKCYAN)
-                    update_status_line(RUNTIME_LINE, "Running Time:", running_time, Colors.OKGREEN)
-                    update_status_line(QUERY_LINE, "Query Count: ", str(query_count), Colors.WARNING)
-
-                    if temp_data != data:
+                    if data_success and temp_data != data:
                         temp_data = data
                         if len(temp_data['rollcalls']) > 0:
                             clear_screen()
@@ -322,8 +343,10 @@ def start_monitor(account, strategy=None):
             except Exception as e:
                 clear_screen()
                 print(f"\n{center_text(f'{Colors.FAIL}{Colors.BOLD}Error occurred:{Colors.ENDC} {str(e)}')}")
-                print(f"{center_text(f'{Colors.GRAY}Exiting...{Colors.ENDC}')}\n")
-                sys.exit(1)
+                print(f"{center_text(f'{Colors.GRAY}Retrying in 5 seconds...{Colors.ENDC}')}\n")
+                time.sleep(5)
+                print_dashboard(ACCOUNT_NAME, start_time, query_count, strategy, 0, show_banner=False)
+                _next_query_time = time.time() + interval
     except KeyboardInterrupt:
         clear_screen()
         print(f"\n{center_text(f'{Colors.WARNING}Shutting down gracefully...{Colors.ENDC}')}")
