@@ -4,14 +4,21 @@ import sys
 import requests
 import shutil
 import re
+import concurrent.futures
 from xmulogin import xmulogin
 from utils import clear_screen, save_session, load_session, verify_session
 from rollcall_handler import process_rollcalls
 from config import get_cookies_path, get_strategy
 
-__version__ = "3.4.1"
+__version__ = "3.5.0"
 
 base_url = "https://lnt.xmu.edu.cn"
+
+# 重连/退避常量
+BACKOFF_BASE = 5       # 初始退避秒数
+BACKOFF_MAX = 60       # 最大退避秒数
+REAUTH_THRESHOLD = 3   # 连续失败多少次后尝试重新登录
+REAUTH_COOLDOWN = 60   # reauth 失败后的冷却秒数，防止轰炸认证服务器
 headers = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -51,7 +58,7 @@ def get_terminal_width():
     """获取终端宽度"""
     try:
         return shutil.get_terminal_size().columns
-    except:
+    except OSError:
         return 80
 
 _ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -125,7 +132,7 @@ def get_colorful_text(text, color_offset=0):
 
 def print_footer_text(color_offset=0):
     """打印底部彩色文字"""
-    text = "XMU-Rollcall-Bot @ KrsMt"
+    text = "XMU-Rollcall-Bot @ KrsMt & gkouen"
     colored = get_colorful_text(text, color_offset)
     print(center_text(colored))
 
@@ -173,6 +180,28 @@ def print_login_status(message, is_success=True):
     else:
         print(f"{Colors.FAIL}[FAILED]{Colors.ENDC} {message}")
 
+def try_reauth(session, username, password, cookies_path):
+    """尝试重新登录以恢复 session
+
+    Args:
+        session: 当前的 requests.Session 对象
+        username: 登录用户名
+        password: 登录密码
+        cookies_path: cookies 文件路径
+
+    Returns:
+        新的 session 对象（成功时），或 None（失败时）
+    """
+    print(f"{Colors.WARNING}[REAUTH] Session may have expired, attempting re-login...{Colors.ENDC}")
+    new_session = xmulogin(type=3, username=username, password=password)
+    if new_session:
+        save_session(new_session, cookies_path)
+        print(f"{Colors.OKGREEN}[REAUTH] Re-login successful{Colors.ENDC}")
+        return new_session
+    else:
+        print(f"{Colors.FAIL}[REAUTH] Re-login failed{Colors.ENDC}")
+        return None
+
 TIME_LINE = 11
 RUNTIME_LINE = 12
 QUERY_LINE = 13
@@ -191,7 +220,7 @@ def update_status_line(line_num, label, value, color):
 
 def update_footer_text():
     """更新底部彩色文字，不清屏"""
-    text = "XMU-Rollcall-Bot @ KrsMt"
+    text = "XMU-Rollcall-Bot @ KrsMt & gkouen"
     colored = get_colorful_text(text, 0)
     width = get_terminal_width()
 
@@ -268,13 +297,14 @@ def start_monitor(account, strategy=None):
     temp_data = {'rollcalls': []}
     query_count = 0
     start_time = time.time()
+    consecutive_errors = 0
+    last_reauth_time = 0  # 上次尝试 reauth 的时间戳
 
     print_dashboard(ACCOUNT_NAME, start_time, query_count, strategy, 0, show_banner=False)
 
     footer_initialized = False
     _next_query_time = time.time()
     
-    import concurrent.futures
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     current_future = None
 
@@ -306,21 +336,43 @@ def start_monitor(account, strategy=None):
                 if current_future and current_future.done():
                     data_success = False
                     error_msg = None
+                    auth_failed = False
                     try:
                         res = current_future.result()
-                        data = res.json()
-                        data_success = True
-                        query_count += 1
+                        # 检测 HTTP 认证失败（401/403）
+                        if res.status_code in (401, 403):
+                            auth_failed = True
+                            error_msg = f"HTTP {res.status_code}"
+                        else:
+                            data = res.json()
+                            data_success = True
+                            query_count += 1
                     except Exception as e:
                         error_msg = type(e).__name__
-                        
+
                     current_future = None
+
+                    # 成功时重置连续错误计数
+                    if data_success:
+                        consecutive_errors = 0
+                    else:
+                        consecutive_errors += 1
 
                     query_display = str(query_count)
                     if error_msg:
-                        query_display += f"    {Colors.FAIL}[Network Error: {error_msg}]{Colors.ENDC}"
-                    
+                        query_display += f"    {Colors.FAIL}[Error: {error_msg}]{Colors.ENDC}"
+
                     update_status_line(QUERY_LINE, "Query Count: ", query_display, Colors.WARNING)
+
+                    # HTTP 401/403 或连续失败达到阈值时，尝试重新登录（受冷却保护）
+                    if (auth_failed or consecutive_errors >= REAUTH_THRESHOLD) and consecutive_errors > 0:
+                        now = time.time()
+                        if now - last_reauth_time >= REAUTH_COOLDOWN:
+                            last_reauth_time = now
+                            new_session = try_reauth(session, USERNAME, PASSWORD, cookies_path)
+                            if new_session:
+                                session = new_session
+                                consecutive_errors = 0
 
                     if data_success and temp_data != data:
                         temp_data = data
@@ -341,10 +393,24 @@ def start_monitor(account, strategy=None):
             except KeyboardInterrupt:
                 raise
             except Exception as e:
+                consecutive_errors += 1
+                # 指数退避：5s, 10s, 20s, 40s, 60s, 60s, ...
+                backoff = min(BACKOFF_BASE * (2 ** (consecutive_errors - 1)), BACKOFF_MAX)
                 clear_screen()
                 print(f"\n{center_text(f'{Colors.FAIL}{Colors.BOLD}Error occurred:{Colors.ENDC} {str(e)}')}")
-                print(f"{center_text(f'{Colors.GRAY}Retrying in 5 seconds...{Colors.ENDC}')}\n")
-                time.sleep(5)
+                print(f"{center_text(f'{Colors.WARNING}Retrying in {backoff}s... (attempt {consecutive_errors}){Colors.ENDC}')}\n")
+
+                # 连续失败达到阈值时，尝试重新登录（受冷却保护）
+                if consecutive_errors >= REAUTH_THRESHOLD:
+                    now = time.time()
+                    if now - last_reauth_time >= REAUTH_COOLDOWN:
+                        last_reauth_time = now
+                        new_session = try_reauth(session, USERNAME, PASSWORD, cookies_path)
+                        if new_session:
+                            session = new_session
+                            consecutive_errors = 0
+
+                time.sleep(backoff)
                 print_dashboard(ACCOUNT_NAME, start_time, query_count, strategy, 0, show_banner=False)
                 _next_query_time = time.time() + interval
     except KeyboardInterrupt:

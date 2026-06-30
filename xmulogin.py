@@ -79,7 +79,7 @@ def _login_ids(username: str, password: str) -> Optional[requests.Session]:
     s = requests.Session()
 
     try:
-        res = s.post(LOGIN_URL, headers=HEADERS)
+        res = s.post(LOGIN_URL, headers=HEADERS, timeout=20)
         html = res.text
 
         # 提取salt和execution
@@ -101,7 +101,7 @@ def _login_ids(username: str, password: str) -> Optional[requests.Session]:
             "execution": execution
         }
 
-        res2 = s.post(LOGIN_URL, headers=HEADERS, data=data, cookies=COOKIES, allow_redirects=False)
+        res2 = s.post(LOGIN_URL, headers=HEADERS, data=data, cookies=COOKIES, allow_redirects=False, timeout=20)
 
         if res2.status_code == 302:
             return s
@@ -130,7 +130,7 @@ def _login_jw(username: str, password: str) -> Optional[requests.Session]:
     }
 
     try:
-        res = s.post(LOGIN_URL, headers=HEADERS)
+        res = s.post(LOGIN_URL, headers=HEADERS, timeout=20)
         html = res.text
 
         # 提取salt和execution
@@ -153,12 +153,12 @@ def _login_jw(username: str, password: str) -> Optional[requests.Session]:
         }
 
         res2 = s.post(LOGIN_URL, headers=HEADERS, data=data, cookies=COOKIES,
-                     allow_redirects=False, params=jw_param)
+                     allow_redirects=False, params=jw_param, timeout=20)
 
         if res2.status_code == 302:
             headers_2 = res2.headers
             location = headers_2['location']
-            res3 = s.get(location, headers=HEADERS, allow_redirects=False)
+            res3 = s.get(location, headers=HEADERS, allow_redirects=False, timeout=20)
             if res3.status_code == 302:
                 return s
 

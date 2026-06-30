@@ -88,7 +88,7 @@ def handle_rollcalls(data, session, random_delay_max=0, number_code_method=1):
             if rollcalls[i]['status'] == 'on_call_fine':
                 print("Already answered.")
                 answer_status[i] = True
-            elif (rollcalls[i]['status'] == 'absent') & (rollcalls[i]['is_number']) & (not rollcalls[i]['is_radar']):
+            elif (rollcalls[i]['status'] == 'absent') and rollcalls[i]['is_number'] and not rollcalls[i]['is_radar']:
                 if number_code_method == 2:
                     success = send_code_bruteforce(session, rollcalls[i]['rollcall_id'])
                 else:

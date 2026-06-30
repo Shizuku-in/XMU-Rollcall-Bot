@@ -191,8 +191,6 @@ def delete_account(config, account_id):
     删除账号并重新编号
     返回: (成功删除, 被删除账号的旧cookies路径列表, 需要重命名的cookies映射)
     """
-    import os
-
     accounts = config.get("accounts", [])
 
     # 找到要删除的账号
@@ -245,8 +243,6 @@ def delete_account(config, account_id):
 
 def perform_account_deletion(cookies_to_delete, cookies_to_rename):
     """执行cookies文件的删除和重命名操作"""
-    import os
-
     # 删除被删除账号的cookies
     if os.path.exists(cookies_to_delete):
         os.remove(cookies_to_delete)

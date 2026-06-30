@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
 import sys
 from xmulogin import xmulogin
 from config import (
@@ -9,9 +10,7 @@ from config import (
     get_account_by_id, CONFIG_FILE, delete_account, perform_account_deletion,
     get_strategy, set_strategy
 )
-from monitor import start_monitor, base_url, headers
-
-__version__ = "3.4.1"
+from monitor import start_monitor, base_url, headers, __version__
 
 # ANSI Color codes
 class Colors:
@@ -276,7 +275,6 @@ def cmd_refresh():
     try:
         print(f"\n{Colors.WARNING}Deleting cookies for account {account_id} ({current_account.get('name')})...{Colors.ENDC}")
         # delete cookies file
-        import os
         if os.path.exists(cookies_path):
             os.remove(cookies_path)
             print(f"{Colors.OKGREEN}✓ Cookies deleted successfully.{Colors.ENDC}")
