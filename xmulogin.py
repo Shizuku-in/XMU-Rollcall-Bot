@@ -3,7 +3,7 @@ XMULogin - 厦门大学统一身份认证登录模块
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 提供厦门大学统一身份认证系统的登录功能。
-集成自 xmulogin 1.0.1，不再需要外部依赖。
+集成自 xmulogin 1.0.0，不再需要外部依赖。
 
 基本用法:
     >>> from xmulogin import xmulogin
@@ -19,6 +19,7 @@ import base64
 import random
 import re
 from Crypto.Cipher import AES
+from urllib.parse import urlparse, parse_qs
 from typing import Optional
 
 
@@ -27,7 +28,7 @@ HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/149.0.0.0 Safari/537.36"
+        "Chrome/150.0.0.0 Safari/537.36"
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "zh-CN,zh;q=0.9",
@@ -180,24 +181,43 @@ def _login_tronclass(username: str, password: str) -> Optional[requests.Session]
     Returns:
         成功返回已登录的Session对象，失败返回None
     """
+    url = "https://c-identity.xmu.edu.cn/auth/realms/xmu/protocol/openid-connect/auth"
+    url_2 = "https://c-identity.xmu.edu.cn/auth/realms/xmu/protocol/openid-connect/token"
+    url_3 = "https://lnt.xmu.edu.cn/api/login?login=access_token"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36"
+    }
+
+    params = {
+        "scope": "openid",
+        "response_type": "code",
+        "client_id": "TronClassH5",
+        "redirect_uri": "https://c-mobile.xmu.edu.cn/identity-web-login-callback?_h5=true"
+    }
+
     try:
         s = requests.Session()
-        s.headers.update(HEADERS)
-        s.cookies.update(COOKIES)
 
-        login_page = s.get('https://lnt.xmu.edu.cn/login', allow_redirects=True, timeout=20)
-        if login_page.status_code != 200:
-            raise RuntimeError(f"无法打开统一身份认证页面，HTTP {login_page.status_code}")
+        # 第一步：获取重定向
+        headers_1 = s.get(url, headers=headers, params=params, allow_redirects=False, timeout=20).headers
+        location = headers_1['location']
 
-        html = login_page.text
-        salt_match = re.search(r'id="pwdEncryptSalt"\s+value="([^"]+)"', html)
-        execution_match = re.search(r'name="execution"\s+value="([^"]+)"', html)
-        if not salt_match or not execution_match:
-            raise RuntimeError("无法从统一身份认证页面提取登录参数")
+        # 第二步：继续重定向
+        headers_2 = s.get(location, headers=headers, allow_redirects=False, timeout=20).headers
+        location = headers_2['location']
 
-        salt = salt_match.group(1)
-        execution = execution_match.group(1)
+        # 第三步：获取登录页面
+        res_3 = s.get(location, headers=headers, allow_redirects=False, timeout=20)
+        html = res_3.text
+
+        # 提取salt和execution
+        salt = re.search(r'id="pwdEncryptSalt"\s+value="([^"]+)"', html).group(1)
+        execution = re.search(r'name="execution"\s+value="([^"]+)"', html).group(1)
+
+        # 加密密码
         enc = _encrypt_password(password, salt)
+
         # 提交登录表单
         data = {
             "username": username,
@@ -210,28 +230,38 @@ def _login_tronclass(username: str, password: str) -> Optional[requests.Session]
             "execution": execution
         }
 
-        post_headers = HEADERS.copy()
-        post_headers["Referer"] = login_page.url
-        login_result = s.post(
-            login_page.url,
-            data=data,
-            headers=post_headers,
-            allow_redirects=True,
-            timeout=20
-        )
-        if login_result.status_code >= 400:
-            raise RuntimeError(f"登录跳转失败，HTTP {login_result.status_code}")
+        headers_4 = s.post(location, data=data, headers=headers, allow_redirects=False, timeout=20).headers
+        location = headers_4['location']
 
-        profile = s.get("https://lnt.xmu.edu.cn/api/profile", headers=HEADERS, timeout=20)
-        if profile.status_code == 200:
-            try:
-                profile_data = profile.json()
-            except ValueError:
-                profile_data = {}
-            if isinstance(profile_data, dict) and "name" in profile_data:
-                return s
+        headers_5 = s.get(location, headers=headers, allow_redirects=False, timeout=20).headers
+        location = headers_5['location']
 
-        raise RuntimeError("登录未通过，账号密码可能错误，或统一身份认证需要验证码/二次验证")
+        # 提取code
+        params_dict = parse_qs(urlparse(location).query)
+        code = params_dict['code'][0]
+
+        # 获取access_token
+        data = {
+            "client_id": "TronClassH5",
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": "https://c-mobile.xmu.edu.cn/identity-web-login-callback?_h5=true",
+            "scope": "openid"
+        }
+
+        res_6 = s.post(url_2, data=data, headers=headers, timeout=20).json()
+        access_token = res_6['access_token']
+
+        # 最后登录
+        data = {
+            "access_token": access_token,
+            "org_id": 1
+        }
+
+        if s.post(url_3, json=data, headers=headers, timeout=20).status_code == 200:
+            return s
+        else:
+            return None
 
     except Exception as e:
         print(f"数字化教学平台登录失败: {e}")
