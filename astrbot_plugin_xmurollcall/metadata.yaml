@@ -1,0 +1,9 @@
+name: astrbot_plugin_xmurollcall
+display_name: XMU Rollcall Monitor
+desc: 厦门大学自动签到监控插件，支持数字签到、雷达签到，检测新签到并自动应答
+version: "1.0.0"
+author: KrsMt & gkouen
+repo: https://github.com/KrsMt/XMU-Rollcall-Bot
+astrbot_version: ">=4.16.0"
+support_platforms:
+  - aiocqhttp

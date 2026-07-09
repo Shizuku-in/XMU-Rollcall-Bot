@@ -1,0 +1,58 @@
+{
+  "username": {
+    "description": "厦门大学统一身份认证用户名（学号/工号）",
+    "type": "string",
+    "default": ""
+  },
+  "password": {
+    "description": "统一身份认证密码",
+    "type": "string",
+    "default": ""
+  },
+  "enabled": {
+    "description": "插件加载后是否自动开始监控",
+    "type": "bool",
+    "default": false
+  },
+  "interval": {
+    "description": "轮询 TronClass API 的时间间隔（秒），最小1秒",
+    "type": "int",
+    "default": 3
+  },
+  "random_delay_max": {
+    "description": "签到前随机延迟的上限（秒），0表示不延迟",
+    "type": "float",
+    "default": 5.0
+  },
+  "number_code_method": {
+    "description": "数字签到方式：1=API获取数字码，2=暴力破解(0000-9999)",
+    "type": "int",
+    "default": 1,
+    "options": [1, 2]
+  },
+  "monitor_start_hour": {
+    "description": "默认：每天监控开始时间（小时，0-23）。若下方 schedule 已配置则忽略此项",
+    "type": "int",
+    "default": 0
+  },
+  "monitor_end_hour": {
+    "description": "默认：每天监控结束时间（小时，0-23），等于开始时间则全天。若下方 schedule 已配置则忽略此项",
+    "type": "int",
+    "default": 23
+  },
+  "schedule": {
+    "description": "按周几的监控时间表 (JSON)。留空则使用上方 start_hour/end_hour。格式见 README",
+    "type": "text",
+    "default": "",
+    "editor_mode": true,
+    "editor_language": "json"
+  },
+  "notify_chats": {
+    "description": "接收通知的会话 ID 列表（群聊或私聊的 session_id），留空则通知到触发命令的会话",
+    "type": "list",
+    "default": [],
+    "items": {
+      "type": "string"
+    }
+  }
+}

