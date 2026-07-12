@@ -3,6 +3,8 @@
 
 import os
 import sys
+import time
+from datetime import datetime, timedelta
 from xmulogin import xmulogin
 from config import (
     load_config, save_config, is_config_complete, get_cookies_path,
@@ -11,6 +13,10 @@ from config import (
     get_strategy, set_strategy
 )
 from monitor import start_monitor, base_url, headers, __version__
+
+
+RESTART_BACKOFF_BASE = 10
+RESTART_BACKOFF_MAX = 300
 
 # ANSI Color codes
 class Colors:
@@ -30,7 +36,7 @@ def print_help():
     print(f"\nUsage: python main.py <command>")
     print(f"  config    Configure credentials and add accounts")
     print(f"  switch    Switch between accounts")
-    print(f"  start     Start monitoring rollcalls")
+    print(f"  start [--at HH:MM]  Start monitoring now or at the next local time")
     print(f"  refresh   Refresh the login status")
     print(f"  --help    Show this message")
 
@@ -230,8 +236,44 @@ def cmd_config():
             print(f"{Colors.WARNING}Invalid action. Please choose n, d, s, or q.{Colors.ENDC}\n")
 
 
-def cmd_start():
+def parse_start_time(value):
+    """Return the next local datetime matching a strict HH:MM value."""
+    if len(value) != 5 or value[2] != ':' or not value[:2].isdigit() or not value[3:].isdigit():
+        raise ValueError("Scheduled time must use 24-hour HH:MM format, for example 08:00")
+    try:
+        target_time = datetime.strptime(value, "%H:%M").time()
+    except ValueError as exc:
+        raise ValueError("Scheduled time must use 24-hour HH:MM format, for example 08:00") from exc
+
+    now = datetime.now()
+    target = now.replace(
+        hour=target_time.hour,
+        minute=target_time.minute,
+        second=0,
+        microsecond=0,
+    )
+    if target <= now:
+        target += timedelta(days=1)
+    return target
+
+
+def wait_until(target):
+    """Wait in small intervals so Ctrl+C remains responsive."""
+    print(
+        f"{Colors.OKCYAN}Scheduled start:{Colors.ENDC} "
+        f"{target.strftime('%Y-%m-%d %H:%M')} (local time)"
+    )
+    while True:
+        remaining = (target - datetime.now()).total_seconds()
+        if remaining <= 0:
+            return
+        time.sleep(min(remaining, 60))
+
+
+def cmd_start(start_at=None):
     """启动签到监控"""
+    scheduled_start = parse_start_time(start_at) if start_at else None
+
     # 加载配置
     config_data = load_config()
 
@@ -249,15 +291,29 @@ def cmd_start():
     strategy = get_strategy(config_data)
     print(f"{Colors.GRAY}Strategy: interval={strategy.get('interval')}s, delay_max={strategy.get('random_delay_max')}s, num_code_method={strategy.get('number_code_method', 1)}{Colors.ENDC}")
 
-    # 启动监控
     try:
-        start_monitor(current_account, strategy)
+        if scheduled_start:
+            wait_until(scheduled_start)
+
+        failures = 0
+        while True:
+            try:
+                start_monitor(current_account, strategy)
+                return
+            except Exception as exc:
+                failures += 1
+                delay = min(
+                    RESTART_BACKOFF_BASE * (2 ** (failures - 1)),
+                    RESTART_BACKOFF_MAX,
+                )
+                print(
+                    f"\n{Colors.WARNING}Monitoring stopped: {exc}{Colors.ENDC}\n"
+                    f"{Colors.OKCYAN}Restarting in {delay} seconds "
+                    f"(attempt {failures}; press Ctrl+C to stop).{Colors.ENDC}"
+                )
+                time.sleep(delay)
     except KeyboardInterrupt:
         print(f"\n{Colors.WARNING}Shutting down...{Colors.ENDC}")
-        sys.exit(0)
-    except Exception as e:
-        print(f"\n{Colors.FAIL}Error: {str(e)}{Colors.ENDC}")
-        sys.exit(1)
 
 
 def cmd_refresh():
@@ -342,7 +398,17 @@ def main():
     if command == 'config':
         cmd_config()
     elif command == 'start':
-        cmd_start()
+        if len(args) == 1:
+            cmd_start()
+        elif len(args) == 3 and args[1] == '--at':
+            try:
+                cmd_start(args[2])
+            except ValueError as exc:
+                print(f"{Colors.FAIL}{exc}{Colors.ENDC}")
+                sys.exit(1)
+        else:
+            print(f"{Colors.FAIL}Usage: python main.py start [--at HH:MM]{Colors.ENDC}")
+            sys.exit(1)
     elif command == 'refresh':
         cmd_refresh()
     elif command == 'switch':

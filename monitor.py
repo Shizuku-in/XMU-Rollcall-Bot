@@ -54,6 +54,10 @@ GREEN_TEXT = f"{Colors.OKGREEN}"
 YELLOW_TEXT = f"{Colors.WARNING}"
 END = Colors.ENDC
 
+
+class MonitorStartupError(RuntimeError):
+    """Raised when monitoring cannot be initialized and should be retried."""
+
 def get_terminal_width():
     """获取终端宽度"""
     try:
@@ -282,9 +286,8 @@ def start_monitor(account, strategy=None):
             save_session(session, cookies_path)
             print_login_status("Login successful", True)
         else:
-            print_login_status("Login failed. Please check your credentials", False)
-            time.sleep(5)
-            sys.exit(1)
+            print_login_status("Login unavailable. The credentials or authentication service may be unavailable", False)
+            raise MonitorStartupError("Unable to log in to the teaching platform")
 
     print(f"{Colors.OKCYAN}[Step 3/3]{Colors.ENDC} Fetching user profile...")
     print_login_status(f"Welcome, {ACCOUNT_NAME}", True)
@@ -419,4 +422,6 @@ def start_monitor(account, strategy=None):
         print(f"{center_text(f'{Colors.GRAY}Total queries performed: {query_count}{Colors.ENDC}')}")
         print(f"{center_text(f'{Colors.GRAY}Total running time: {format_time(int(time.time() - start_time))}{Colors.ENDC}')}")
         print(f"\n{center_text(f'{Colors.OKGREEN}Goodbye{Colors.ENDC}')}\n")
-        sys.exit(0)
+        return
+    finally:
+        executor.shutdown(wait=False)
